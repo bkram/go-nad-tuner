@@ -260,7 +260,6 @@ func amBytesToFrequency(bytesResponse []byte) int {
 	}
 
 	frequency := int(freqBytes[1])<<8 | int(freqBytes[0])
-
 	return frequency
 }
 
