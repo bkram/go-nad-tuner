@@ -1,4 +1,4 @@
-module github.com/bkram/nad-cli
+module github.com/bkram/go-nad-tuner
 
 go 1.20
 
