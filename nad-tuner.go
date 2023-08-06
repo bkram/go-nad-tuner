@@ -104,7 +104,6 @@ func handleCommands(serialPort *serial.Port, power string, blend string, mute st
 		showState(serialPort, "Blend", getBlendState)
 		showState(serialPort, "Mute", getMuteState)
 	}
-
 }
 
 func validateFrequencyFM(freq float64) error {
