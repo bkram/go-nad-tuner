@@ -16,6 +16,13 @@ func fmBytesToFrequency(response []byte) float64 {
 	}
 }
 
+func amFrequencyToBytes(frequency int) []byte {
+	freqBytes := make([]byte, 2)
+	freqBytes[0] = byte(frequency & 0xFF)
+	freqBytes[1] = byte((frequency >> 8) & 0xFF)
+	return freqBytes
+}
+
 func amBytesToFrequency(bytesResponse []byte) int {
 	var freqBytes []byte
 
