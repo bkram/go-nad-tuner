@@ -25,15 +25,15 @@ var (
 	getBlend       = []byte{1, 20, 49, 2, 186}
 	getDevice      = []byte{1, 20, 20, 2, 215}
 	getFMFrequency = []byte{1, 20, 45, 2, 190}
-	getAMFrequency = []byte{1, 20, 44, 142, 94, 69, 2, 44}
+	getAMFrequency = []byte{1, 20, 44, 2, 191}
 	getFMMute      = []byte{1, 20, 47, 2, 188}
 	getPower       = []byte{1, 20, 21, 2, 214}
 	setFMBand      = []byte{1, 22, 129, 2, 104}
-	turnOffBlend   = []byte{1, 21, 49, 94, 64, 2, 185}
-	turnOffMute    = []byte{1, 21, 47, 94, 64, 2, 187}
+	turnOffBlend   = []byte{1, 21, 49, 0, 2, 185}
+	turnOffMute    = []byte{1, 21, 47, 0, 2, 187}
 	turnOffPower   = []byte{1, 21, 21, 0, 2, 213}
-	turnOnBlend    = []byte{1, 21, 49, 94, 65, 2, 184}
-	turnOnMute     = []byte{1, 21, 47, 94, 65, 2, 186}
+	turnOnBlend    = []byte{1, 21, 49, 1, 2, 184}
+	turnOnMute     = []byte{1, 21, 47, 1, 2, 186}
 	turnOnPower    = []byte{1, 21, 21, 1, 2, 212}
 )
 
@@ -103,12 +103,15 @@ func handleCommands(serialPort *serial.Port, argPower string, argBlend string, a
 		fmt.Printf("Detected tuner: NAD %s | Power: %s\n", getDeviceID(serialPort), getState(serialPort, getPowerState))
 
 		band := getCurrentBand(serialPort)
-		if band == "FM" {
-			fmt.Printf("FM switches (Blend: %s | Mute: %s)\n", getState(serialPort, getBlendState), getState(serialPort, getMuteState))
-			showFMFrequency(serialPort)
-		}
-		if band == "AM" {
-			showAMFrequency(serialPort)
+
+		if getState(serialPort, getPowerState) == "On" {
+			if band == "FM" {
+				fmt.Printf("FM switches (Blend: %s | Mute: %s)\n", getState(serialPort, getBlendState), getState(serialPort, getMuteState))
+				showFMFrequency(serialPort)
+			}
+			if band == "AM" {
+				showAMFrequency(serialPort)
+			}
 		}
 	}
 }
