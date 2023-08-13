@@ -10,14 +10,17 @@ import (
 )
 
 const (
-	baudRate       = 9600
-	readTimeout    = time.Second
-	dataSize       = 8
-	parity         = serial.ParityNone
-	stopBits       = serial.Stop1
-	defaultPort    = "/dev/ttyUSB0"
-	minFMFrequency = 87.50
-	maxFMFrequency = 108.00
+	baudRate           = 9600
+	readTimeout        = time.Second
+	dataSize           = 8
+	parity             = serial.ParityNone
+	stopBits           = serial.Stop1
+	defaultPort        = "/dev/ttyUSB0"
+	minFMFrequency     = 87.50
+	maxFMFrequency     = 108.00
+	minAMFrequency     = 531
+	maxAMFrequency     = 1602
+	aMFrequencyspacing = 9
 )
 
 var (
@@ -28,7 +31,8 @@ var (
 	getAMFrequency = []byte{1, 20, 44}
 	getFMMute      = []byte{1, 20, 47}
 	getPower       = []byte{1, 20, 21}
-	setFMBand      = []byte{1, 22, 129}
+	setAMBand      = []byte{1, 21, 43, 0}
+	setFMBand      = []byte{1, 21, 43, 1}
 	turnOffBlend   = []byte{1, 21, 49, 0}
 	turnOffMute    = []byte{1, 21, 47, 0}
 	turnOffPower   = []byte{1, 21, 21, 0}
@@ -42,11 +46,13 @@ func main() {
 
 	var (
 		fmfrequencyPtr = flag.Float64("fm", 0, "Specify the frequency (e.g., 96.80)")
+		amfrequencyPtr = flag.Int("am", 0, "Specify the frequency (e.g., 1008)")
 		showPtr        = flag.Bool("show", false, "Show power state, band, and frequency")
 		powerPtr       = flag.String("power", "", "Turn power on or off")
 		blendPtr       = flag.String("blend", "", "Turn blend on or off")
 		mutePtr        = flag.String("mute", "", "Turn mute on or off")
 		portPtr        = flag.String("port", defaultPort, "Serial port name")
+		bandPtr        = flag.String("band", "", "Switch band (e.g. am, fm)")
 	)
 
 	flag.Usage = func() {
@@ -57,7 +63,8 @@ func main() {
 
 	flag.Parse()
 
-	if !(*showPtr || *powerPtr != "" || *blendPtr != "" || *mutePtr != "" || *fmfrequencyPtr > 0) {
+	if !(*showPtr || *powerPtr != "" || *blendPtr != "" || *mutePtr != "" ||
+		*fmfrequencyPtr > 0 || *amfrequencyPtr > 0 || *bandPtr != "") {
 		flag.Usage()
 		return
 	}
@@ -68,10 +75,11 @@ func main() {
 	}
 	defer serialPort.Close()
 
-	handleCommands(serialPort, *powerPtr, *blendPtr, *mutePtr, *showPtr, *fmfrequencyPtr)
+	handleCommands(serialPort, *powerPtr, *blendPtr, *mutePtr, *showPtr, *fmfrequencyPtr, *amfrequencyPtr, *bandPtr)
 }
 
-func handleCommands(serialPort *serial.Port, argPower string, argBlend string, argMute string, argShow bool, argFrequency float64) {
+func handleCommands(serialPort *serial.Port, argPower string, argBlend string, argMute string, argShow bool,
+	argFMFrequency float64, argAMFrequency int, argBand string) {
 	if argPower == "on" {
 		power(serialPort, true)
 	}
@@ -95,12 +103,24 @@ func handleCommands(serialPort *serial.Port, argPower string, argBlend string, a
 		mute(serialPort, false)
 	}
 
-	if argFrequency > 0 {
-		setFMFrequency(serialPort, argFrequency)
+	if argFMFrequency > 0 {
+		setFMFrequency(serialPort, argFMFrequency)
 	}
 
-	if argShow || argFrequency > 0 || argBlend == "off" || argBlend == "on" || argMute == "on" || argMute == "off" {
-		fmt.Printf("Detected tuner: NAD %s | Power: %s\n", getDeviceID(serialPort), getState(serialPort, getPowerState))
+	if argAMFrequency > 0 {
+		setAMFrequency(serialPort, argAMFrequency)
+	}
+
+	if argBand == "fm" {
+		switchToFMMode(serialPort)
+	} else if argBand == "am" {
+		switchToAMMode(serialPort)
+	}
+
+	if argShow || argFMFrequency > 0 || argBlend == "off" || argBlend == "on" || argMute == "on" ||
+		argMute == "off" || argBand != "" || argPower == "on" {
+		fmt.Printf("Detected tuner: NAD %s | Power: %s\n", getDeviceID(serialPort),
+			getState(serialPort, getPowerState))
 
 		band := getCurrentBand(serialPort)
 
@@ -119,6 +139,16 @@ func handleCommands(serialPort *serial.Port, argPower string, argBlend string, a
 func validateFMFrequency(freq float64) error {
 	if freq < minFMFrequency || freq > maxFMFrequency {
 		return fmt.Errorf("frequency should be between %.2f and %.2f", minFMFrequency, maxFMFrequency)
+	}
+	return nil
+}
+
+func validateAMFrequency(freq int) error {
+	if freq < minAMFrequency || freq > maxAMFrequency {
+		return fmt.Errorf("frequency should be between %d and %d kHz", minAMFrequency, maxAMFrequency)
+	}
+	if (freq-minAMFrequency)%aMFrequencyspacing != 0 {
+		return fmt.Errorf("frequency spacing should be %d kHz", aMFrequencyspacing)
 	}
 	return nil
 }
@@ -182,7 +212,6 @@ func openSerialPort(portName string) (*serial.Port, error) {
 }
 
 func sendCommand(serialPort *serial.Port, command []byte) ([]byte, error) {
-
 	crc := crcCalculate(command)
 	command = append(command, 2)
 	command = append(command, crc...)
@@ -256,6 +285,12 @@ func switchToFMMode(serialPort *serial.Port) error {
 	return err
 }
 
+func switchToAMMode(serialPort *serial.Port) error {
+	_, err := sendCommand(serialPort, setAMBand)
+	time.Sleep(2 * time.Second)
+	return err
+}
+
 func setFMFrequency(serialPort *serial.Port, freq float64) {
 	if err := validateFMFrequency(freq); err != nil {
 		log.Fatal(err)
@@ -273,7 +308,31 @@ func setFMFrequency(serialPort *serial.Port, freq float64) {
 
 	if currentFrequency == freq {
 	} else {
-		err = setFrequency(serialPort, freq)
+		err = setTunerFMFrequency(serialPort, freq)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+}
+
+func setAMFrequency(serialPort *serial.Port, freq int) {
+	if err := validateAMFrequency(freq); err != nil {
+		log.Fatal(err)
+	}
+
+	var currentBand string = getCurrentBand(serialPort)
+	if currentBand != "AM" {
+		switchToAMMode(serialPort)
+	}
+
+	currentFrequency, err := getCurrentAMFrequency(serialPort)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if currentFrequency == freq {
+	} else {
+		err = setTunerAMFrequency(serialPort, freq)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -359,7 +418,16 @@ func getCurrentFMFrequency(serialPort *serial.Port) (float64, error) {
 	return fmBytesToFrequency(response), nil
 }
 
-func setFrequency(serialPort *serial.Port, freq float64) error {
+func getCurrentAMFrequency(serialPort *serial.Port) (int, error) {
+	response, err := sendCommand(serialPort, getAMFrequency)
+	if err != nil {
+		return 0, err
+	}
+
+	return amBytesToFrequency(response), nil
+}
+
+func setTunerFMFrequency(serialPort *serial.Port, freq float64) error {
 	bytesData := fmFrequencyToBytes(freq)
 	command := []byte{1, 21, 45, bytesData[0], bytesData[1]}
 	crc := crcCalculate(command)
@@ -379,5 +447,29 @@ func setFrequency(serialPort *serial.Port, freq float64) error {
 	}
 
 	_, err := serialPort.Write(sendCommand)
+	return err
+}
+
+func setTunerAMFrequency(serialPort *serial.Port, freq int) error {
+	bytesData := amFrequencyToBytes(freq)
+	command := []byte{1, 21, 44, bytesData[0], bytesData[1]}
+	crc := crcCalculate(command)
+
+	if bytesData[1] == 2 {
+		command = []byte{1, 21, 44, bytesData[0], 94, bytesData[1] + 64}
+	}
+
+	command = append(command, 2)
+	command = append(command, crc...)
+
+	// var integerValues []int
+	// for _, b := range command {
+	// 	integerValues = append(integerValues, int(b))
+	// }
+
+	// fmt.Println("Byte values command:", integerValues)
+	// fmt.Println("NAD output command:  [1 21 44 46 94 66 2 142]")
+
+	_, err := serialPort.Write(command)
 	return err
 }
