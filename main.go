@@ -21,20 +21,20 @@ const (
 )
 
 var (
-	getBand        = []byte{1, 20, 43, 2, 192}
-	getBlend       = []byte{1, 20, 49, 2, 186}
-	getDevice      = []byte{1, 20, 20, 2, 215}
-	getFMFrequency = []byte{1, 20, 45, 2, 190}
-	getAMFrequency = []byte{1, 20, 44, 2, 191}
-	getFMMute      = []byte{1, 20, 47, 2, 188}
-	getPower       = []byte{1, 20, 21, 2, 214}
-	setFMBand      = []byte{1, 22, 129, 2, 104}
-	turnOffBlend   = []byte{1, 21, 49, 0, 2, 185}
-	turnOffMute    = []byte{1, 21, 47, 0, 2, 187}
-	turnOffPower   = []byte{1, 21, 21, 0, 2, 213}
-	turnOnBlend    = []byte{1, 21, 49, 1, 2, 184}
-	turnOnMute     = []byte{1, 21, 47, 1, 2, 186}
-	turnOnPower    = []byte{1, 21, 21, 1, 2, 212}
+	getBand        = []byte{1, 20, 43}
+	getBlend       = []byte{1, 20, 49}
+	getDevice      = []byte{1, 20, 20}
+	getFMFrequency = []byte{1, 20, 45}
+	getAMFrequency = []byte{1, 20, 44}
+	getFMMute      = []byte{1, 20, 47}
+	getPower       = []byte{1, 20, 21}
+	setFMBand      = []byte{1, 22, 129}
+	turnOffBlend   = []byte{1, 21, 49, 0}
+	turnOffMute    = []byte{1, 21, 47, 0}
+	turnOffPower   = []byte{1, 21, 21, 0}
+	turnOnBlend    = []byte{1, 21, 49, 1}
+	turnOnMute     = []byte{1, 21, 47, 1}
+	turnOnPower    = []byte{1, 21, 21, 1}
 )
 
 func main() {
@@ -182,6 +182,11 @@ func openSerialPort(portName string) (*serial.Port, error) {
 }
 
 func sendCommand(serialPort *serial.Port, command []byte) ([]byte, error) {
+
+	crc := crcCalculate(command)
+	command = append(command, 2)
+	command = append(command, crc...)
+
 	serialPort.Flush()
 	_, err := serialPort.Write(command)
 	if err != nil {
@@ -216,14 +221,6 @@ func readResponse(serialPort *serial.Port) ([]byte, error) {
 	return response, nil
 }
 
-func fmBytesToFrequency(response []byte) float64 {
-	if response[3] == 94 {
-		return float64(int(response[4])|int(response[5])<<8) / 100.0
-	} else {
-		return float64(int(response[3])|int(response[4])<<8) / 100.0
-	}
-}
-
 func getDeviceID(serialPort *serial.Port) []byte {
 	response, err := sendCommand(serialPort, getDevice)
 	if err != nil {
@@ -251,19 +248,6 @@ func showAMFrequency(serialPort *serial.Port) {
 	frequency := amBytesToFrequency(response)
 	fmt.Printf("AM Frequency: %d Khz\n", frequency)
 
-}
-
-func amBytesToFrequency(bytesResponse []byte) int {
-	var freqBytes []byte
-
-	if bytesResponse[4] == 94 {
-		freqBytes = []byte{bytesResponse[3], bytesResponse[5] - 64}
-	} else {
-		freqBytes = []byte{bytesResponse[4] - 64, bytesResponse[6] - 64}
-	}
-
-	frequency := int(freqBytes[1])<<8 | int(freqBytes[0])
-	return frequency
 }
 
 func switchToFMMode(serialPort *serial.Port) error {
@@ -396,21 +380,4 @@ func setFrequency(serialPort *serial.Port, freq float64) error {
 
 	_, err := serialPort.Write(sendCommand)
 	return err
-}
-
-func fmFrequencyToBytes(frequency float64) []byte {
-	freqInt := int(frequency * 100)
-	freqBytes := make([]byte, 2)
-	freqBytes[0] = byte(freqInt & 0xFF)
-	freqBytes[1] = byte((freqInt >> 8) & 0xFF)
-	return freqBytes
-}
-
-func crcCalculate(crcCommand []byte) []byte {
-	var crcCalc byte
-	for _, val := range crcCommand {
-		crcCalc += val
-	}
-	crcCalc = (^crcCalc) + 1
-	return []byte{crcCalc}
 }
